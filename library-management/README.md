@@ -60,5 +60,3 @@ app working without a REST client, and calls the same in-memory store.
 ```bash
 pytest
 ```
-
-The `tests/` folder is intentionally empty — writing the unit tests is part of the course assignments.
