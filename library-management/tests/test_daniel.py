@@ -198,3 +198,89 @@ def test_lookup_loan_reflects_return(client):
     saved_loan = client.get(f"/loans?book_id={book['id']}").get_json()[0]
     assert saved_loan["due_date"] == loan["due_date"]
     assert saved_loan["return_date"] == date.today().isoformat()
+
+##FEATURE: PLACE A HOLD
+
+def place_hold(client, book_id, member_id):
+    return client.post("/reservations", json={"book_id":book_id, "member_id":member_id})
+
+# FR-020: a member can place a hold on a checked-out book
+def test_place_hold_on_checked_out_book(client):
+    book = add_book(client)
+    borrower = add_member(client, email="m1@example.com")
+    waiting = add_member(client, email="m2@example.com")
+    checkout(client, book["id"], borrower["id"])
+    response = place_hold(client, book["id"], waiting["id"])
+    assert response.status_code == 201
+    hold = response.get_json()
+    assert hold["book_id"] == book["id"]
+    assert hold["member_id"] == waiting["id"]
+    assert hold["reservation_date"] == date.today().isoformat()
+    assert hold["fulfilled"] is False
+    assert client.get("/reservations").get_json() == [hold]
+
+def test_place_hold_unknown_book_or_member(client):
+    book = add_book(client)
+    member = add_member(client)
+    assert place_hold(client, 999, member["id"]).status_code == 404
+    assert place_hold(client, book["id"], 999).status_code == 404
+    assert client.get("/reservations").get_json() == []
+
+# FR-021: the waiting list must stay ordered, so one member
+# holding the same book twice would take up two places in line
+def test_place_hold_twice_same_member_rejected(client):
+    book = add_book(client)
+    borrower = add_member(client, email="m1@example.com")
+    waiting = add_member(client, email="m2@example.com")
+    checkout(client, book["id"], borrower["id"])
+    place_hold(client, book["id"], waiting["id"])
+    response = place_hold(client, book["id"], waiting["id"])
+    assert 400 <= response.status_code < 500
+    assert len(client.get(f"/reservations?book_id={book['id']}").get_json()) == 1
+
+# FR-004/FR-020: a returned book with an outstanding hold is not simply
+# available, so a member who is not first in line should not get it
+def test_hold_blocks_checkout_by_other_member(client):
+    book = add_book(client)
+    borrower = add_member(client, email="m1@example.com")
+    waiting = add_member(client, email="m2@example.com")
+    other = add_member(client, email="m3@example.com")
+    loan = checkout(client, book["id"], borrower["id"]).get_json()
+    place_hold(client, book["id"], waiting["id"])
+    client.put(f"/loans/{loan['id']}/return")
+    response = checkout(client, book["id"], other["id"])
+    assert 400 <= response.status_code < 500
+    assert get_copies(client, book["id"]) == 1
+
+##FEATURE: LIST RESERVATIONS
+
+# FR-021: holds on the same book are listed in the order they were placed
+def test_list_reservations_in_order_placed(client):
+    book = add_book(client)
+    borrower = add_member(client, email="m1@example.com")
+    second = add_member(client, email="m2@example.com")
+    third = add_member(client, email="m3@example.com")
+    checkout(client, book["id"], borrower["id"])
+    place_hold(client, book["id"], second["id"])
+    place_hold(client, book["id"], third["id"])
+    holds = client.get(f"/reservations?book_id={book['id']}").get_json()
+    assert [h["member_id"] for h in holds] == [second["id"], third["id"]]
+
+def test_list_reservations_filter_by_member_and_book(client):
+    book_1 = add_book(client, isbn="1")
+    book_2 = add_book(client, isbn="2")
+    ann = add_member(client, email="ann@example.com")
+    bo = add_member(client, email="bo@example.com")
+    place_hold(client, book_1["id"], ann["id"])
+    place_hold(client, book_2["id"], ann["id"])
+    place_hold(client, book_1["id"], bo["id"])
+    ann_holds = client.get(f"/reservations?member_id={ann['id']}").get_json()
+    assert [h["book_id"] for h in ann_holds] == [book_1["id"], book_2["id"]]
+    both = client.get(f"/reservations?book_id={book_1['id']}&member_id={bo['id']}").get_json()
+    assert len(both) == 1
+    assert both[0]["member_id"] == bo["id"]
+
+def test_list_reservations_empty(client):
+    assert client.get("/reservations").get_json() == []
+    add_book(client)
+    assert client.get("/reservations?book_id=1").get_json() == []
