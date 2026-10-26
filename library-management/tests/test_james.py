@@ -1,4 +1,7 @@
-from datetime import date
+from datetime import date, timedelta
+ 
+from app import store
+from app.models.loan import Loan
 
 a_book = {"title":"A", "author":"B", "isbn":"100", "total_copies":1}
 a_member = {"name":"M", "email":"m@example.com"}
@@ -22,6 +25,9 @@ def checkout_book(client, book_id, member_id):
 def get_copies(client, book_id):
     return client.get(f"/books/{book_id}").get_json()["available_copies"]
 
+def add_loan_to_store(loan_id, book_id, member_id, due_date, return_date=None):
+    store.loans[loan_id] = Loan(id=loan_id, book_id=book_id, member_id=member_id,
+                                due_date=due_date, return_date=return_date)
 
 ##FEATURE: LIST BOOKS
 
@@ -179,3 +185,77 @@ def test_return_twice_rejected(client):
 def test_return_loan_not_found(client):
     response = client.put("/loans/999/return")
     assert response.status_code == 404
+
+##FEATURE: RENEW A LOAN
+ 
+def test_renew_adds_14_days(client):
+    book = add_book(client)
+    member = add_member(client)
+    loan = checkout_book(client, book["id"], member["id"])
+    old_due_date = date.fromisoformat(loan["due_date"])
+    response = client.put(f"/loans/{loan['id']}/renew")
+    assert response.status_code == 200
+    new_due_date = date.fromisoformat(response.get_json()["due_date"])
+    assert new_due_date == old_due_date + timedelta(days=14)
+    saved_loan = client.get(f"/loans?book_id={book['id']}").get_json()[0]
+    assert saved_loan["due_date"] == new_due_date.isoformat()
+ 
+def test_renew_loan_not_found(client):
+    response = client.put("/loans/999/renew")
+    assert response.status_code == 404
+ 
+def test_renew_after_return_rejected(client):
+    book = add_book(client)
+    member = add_member(client)
+    loan = checkout_book(client, book["id"], member["id"])
+    client.put(f"/loans/{loan['id']}/return")
+    response = client.put(f"/loans/{loan['id']}/renew")
+    assert response.status_code == 400
+ 
+def test_renew_blocked_by_hold(client):
+    book = add_book(client)
+    borrower = add_member(client, email="m1@example.com")
+    waiting = add_member(client, email="m2@example.com")
+    loan = checkout_book(client, book["id"], borrower["id"])
+    client.post("/reservations", json={"book_id":book["id"], "member_id":waiting["id"]})
+    response = client.put(f"/loans/{loan['id']}/renew")
+    assert response.status_code != 200
+ 
+##FEATURE: CALCULATE A FINE
+ 
+def test_fine_zero_when_not_due(client):
+    book = add_book(client)
+    member = add_member(client)
+    loan = checkout_book(client, book["id"], member["id"])
+    data = client.get(f"/loans/{loan['id']}/fine").get_json()
+    assert data["loan_id"] == loan["id"]
+    assert data["fine_amount"] == 0
+ 
+def test_fine_per_day_overdue(client):
+    book = add_book(client)
+    member = add_member(client)
+    add_loan_to_store(50, book["id"], member["id"], date.today() - timedelta(days=5))
+    data = client.get("/loans/50/fine").get_json()
+    assert data["fine_amount"] == 1.25
+ 
+def test_fine_loan_not_found(client):
+    response = client.get("/loans/999/fine")
+    assert response.status_code == 404
+ 
+def test_fine_lower_after_renewal(client):
+    book = add_book(client)
+    member = add_member(client)
+    add_loan_to_store(52, book["id"], member["id"], date.today() - timedelta(days=20))
+    fine_before = client.get("/loans/52/fine").get_json()["fine_amount"]
+    client.put("/loans/52/renew")
+    fine_after = client.get("/loans/52/fine").get_json()["fine_amount"]
+    assert fine_before == 5.0
+    assert fine_after == 1.5
+ 
+def test_fine_stops_at_return_date(client):
+    book = add_book(client)
+    member = add_member(client)
+    due_date = date.today() - timedelta(days=10)
+    add_loan_to_store(53, book["id"], member["id"], due_date, return_date=due_date + timedelta(days=2))
+    data = client.get("/loans/53/fine").get_json()
+    assert data["fine_amount"] == 0.5
