@@ -284,3 +284,54 @@ def test_list_reservations_empty(client):
     assert client.get("/reservations").get_json() == []
     add_book(client)
     assert client.get("/reservations?book_id=1").get_json() == []
+
+##ENHANCEMENT: HOLD QUEUE (FR-004, FR-020, FR-021, FR-022)
+
+def hold_position(client, reservation_id):
+    return client.get(f"/reservations/{reservation_id}/position")
+
+def test_first_in_line_checks_out_and_queue_moves_up(client):
+    book = add_book(client)
+    borrower = add_member(client, email="m1@example.com")
+    first = add_member(client, email="m2@example.com")
+    second = add_member(client, email="m3@example.com")
+    loan = checkout(client, book["id"], borrower["id"]).get_json()
+    hold_1 = place_hold(client, book["id"], first["id"]).get_json()
+    hold_2 = place_hold(client, book["id"], second["id"]).get_json()
+    client.put(f"/loans/{loan['id']}/return")
+    assert checkout(client, book["id"], second["id"]).status_code == 409
+    response = checkout(client, book["id"], first["id"])
+    assert response.status_code == 201
+    assert response.get_json()["member_id"] == first["id"]
+    holds = client.get(f"/reservations?book_id={book['id']}").get_json()
+    assert [h["fulfilled"] for h in holds] == [True, False]
+    assert hold_position(client, hold_2["id"]).get_json()["position"] == 1
+    assert hold_position(client, hold_1["id"]).status_code == 400
+
+def test_hold_position_reports_place_in_line(client):
+    book = add_book(client)
+    borrower = add_member(client, email="m1@example.com")
+    first = add_member(client, email="m2@example.com")
+    second = add_member(client, email="m3@example.com")
+    checkout(client, book["id"], borrower["id"])
+    hold_1 = place_hold(client, book["id"], first["id"]).get_json()
+    hold_2 = place_hold(client, book["id"], second["id"]).get_json()
+    data = hold_position(client, hold_2["id"]).get_json()
+    assert data["member_id"] == second["id"]
+    assert data["position"] == 2
+    assert data["queue_length"] == 2
+    assert hold_position(client, hold_1["id"]).get_json()["position"] == 1
+    assert hold_position(client, 999).status_code == 404
+
+def test_spare_copies_not_blocked_by_hold(client):
+    book = add_book(client, total_copies=3)
+    borrower = add_member(client, email="m1@example.com")
+    waiting = add_member(client, email="m2@example.com")
+    other = add_member(client, email="m3@example.com")
+    checkout(client, book["id"], borrower["id"])
+    place_hold(client, book["id"], waiting["id"])
+    assert checkout(client, book["id"], other["id"]).status_code == 201
+    assert get_copies(client, book["id"]) == 1
+    assert checkout(client, book["id"], borrower["id"]).status_code == 409
+    assert checkout(client, book["id"], waiting["id"]).status_code == 201
+    assert get_copies(client, book["id"]) == 0
