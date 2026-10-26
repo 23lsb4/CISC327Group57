@@ -36,6 +36,11 @@ app working without a REST client, and calls the same in-memory store.
 - **Book**: `id, title, author, isbn, total_copies, available_copies`
 - **Member**: `id, name, email, membership_date`
 - **Loan**: `id, book_id, member_id, loan_date, due_date, return_date`
+- **Reservation**: `id, book_id, member_id, reservation_date, fulfilled`
+
+Holds form a first-come waiting list per book. When a copy is free, it is
+kept for the member at the front of the list: `POST /loans` by anyone else
+returns `409`, and the front member's checkout marks their hold `fulfilled`.
 
 ## JSON API Endpoints
 
@@ -54,6 +59,9 @@ app working without a REST client, and calls the same in-memory store.
 | POST | `/loans` | Check out a book (`book_id`, `member_id`) |
 | PUT | `/loans/<id>/return` | Return a loaned book |
 | GET | `/loans?member_id=&book_id=` | Look up loans |
+| POST | `/reservations` | Place a hold (`book_id`, `member_id`); rejects a second active hold by the same member |
+| GET | `/reservations?book_id=&member_id=` | List holds, oldest first |
+| GET | `/reservations/<id>/position` | A hold's place in the book's waiting list (`position`, `queue_length`) |
 
 ## Tests
 
