@@ -4,6 +4,7 @@ from flask import Blueprint, jsonify, request
 
 from app import store
 from app.models.loan import Loan, LOAN_PERIOD_DAYS
+from app.routes.reservations import active_holds
 
 FINE_PER_DAY = 0.25  # dollars charged per day overdue
 
@@ -36,6 +37,16 @@ def checkout_book():
     book = store.books.get(data["book_id"])
     if book is None:
         return jsonify({"error": "Book not found"}), 404
+
+    # Copies are set aside for the members at the front of the hold queue.
+    # Anyone else can only take a copy that no waiting member is owed.
+    queue = active_holds(book.id)
+    first_in_line = queue[:max(book.available_copies, 0)]
+    own_hold = next((r for r in first_in_line if r.member_id == data["member_id"]), None)
+    if own_hold is None and queue and len(queue) >= book.available_copies:
+        return jsonify({"error": "Book is on hold for another member"}), 409
+    if own_hold is not None:
+        own_hold.fulfilled = True
 
     book.available_copies -= 1
 
