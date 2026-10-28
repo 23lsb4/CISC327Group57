@@ -11,6 +11,17 @@ class Loan:
         self.loan_date = loan_date or date.today()
         self.due_date = due_date
         self.return_date = return_date
+        
+    def is_overdue(self, today=None):
+            today = today or date.today()
+            overdue_status = (self.return_date is None) and (self.due_date < today)
+            return overdue_status
+
+    def days_overdue(self, today=None):
+        today = today or date.today()
+        if not self.is_overdue(today):
+            return 0
+        return (today - self.due_date).days
 
     def to_dict(self):
         return {
@@ -20,6 +31,8 @@ class Loan:
             "loan_date": self.loan_date.isoformat(),
             "due_date": self.due_date.isoformat(),
             "return_date": self.return_date.isoformat() if self.return_date else None,
+            "overdue": self.is_overdue(),
+            "days_overdue": self.days_overdue(),
         }
 
     @staticmethod

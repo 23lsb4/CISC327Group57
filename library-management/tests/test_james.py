@@ -259,3 +259,79 @@ def test_fine_stops_at_return_date(client):
     add_loan_to_store(53, book["id"], member["id"], due_date, return_date=due_date + timedelta(days=2))
     data = client.get("/loans/53/fine").get_json()
     assert data["fine_amount"] == 0.5
+
+##ENHANCEMENT: OVERDUE LOAN TRACKING
+ 
+def test_overdue_loan_listed_with_days(client):
+    book = add_book(client)
+    member = add_member(client)
+    add_loan_to_store(60, book["id"], member["id"], date.today() - timedelta(days=5))
+    response = client.get("/loans/overdue")
+    assert response.status_code == 200
+    overdue_loans = response.get_json()
+    assert len(overdue_loans) == 1
+    assert overdue_loans[0]["id"] == 60
+    assert overdue_loans[0]["overdue"] is True
+    assert overdue_loans[0]["days_overdue"] == 5
+ 
+def test_overdue_loan_due_today_not_overdue(client):
+    book = add_book(client)
+    member = add_member(client)
+    add_loan_to_store(61, book["id"], member["id"], date.today())
+    assert client.get("/loans/overdue").get_json() == []
+    saved_loan = client.get(f"/loans?book_id={book['id']}").get_json()[0]
+    assert saved_loan["overdue"] is False
+    assert saved_loan["days_overdue"] == 0
+ 
+def test_overdue_loan_removed_after_return(client):
+    book = add_book(client)
+    member = add_member(client)
+    add_loan_to_store(62, book["id"], member["id"], date.today() - timedelta(days=3))
+    assert len(client.get("/loans/overdue").get_json()) == 1
+    client.put("/loans/62/return")
+    assert client.get("/loans/overdue").get_json() == []
+    saved_loan = client.get(f"/loans?book_id={book['id']}").get_json()[0]
+    assert saved_loan["overdue"] is False
+    assert saved_loan["days_overdue"] == 0
+ 
+def test_overdue_loans_member_filter(client):
+    book = add_book(client, total_copies=2)
+    member_1 = add_member(client, email="m1@example.com")
+    member_2 = add_member(client, email="m2@example.com")
+    add_loan_to_store(63, book["id"], member_1["id"], date.today() - timedelta(days=4))
+    add_loan_to_store(64, book["id"], member_2["id"], date.today() - timedelta(days=2))
+    result_1 = client.get(f"/loans/overdue?member_id={member_1['id']}").get_json()
+    result_2 = client.get(f"/loans/overdue?member_id={member_2['id']}").get_json()
+    assert [loan["id"] for loan in result_1] == [63]
+    assert [loan["id"] for loan in result_2] == [64]
+    response = client.get("/loans/overdue?member_id=999")
+    assert response.status_code == 200
+    assert response.get_json() == []
+ 
+def test_overdue_loans_oldest_first(client):
+    book = add_book(client, total_copies=3)
+    member = add_member(client)
+    add_loan_to_store(65, book["id"], member["id"], date.today() - timedelta(days=3))
+    add_loan_to_store(66, book["id"], member["id"], date.today() - timedelta(days=9))
+    add_loan_to_store(67, book["id"], member["id"], date.today() - timedelta(days=6))
+    overdue_loans = client.get("/loans/overdue").get_json()
+    assert [loan["id"] for loan in overdue_loans] == [66, 67, 65]
+ 
+def test_new_checkout_not_overdue(client):
+    book = add_book(client)
+    member = add_member(client)
+    loan = checkout_book(client, book["id"], member["id"])
+    assert loan["overdue"] is False
+    assert loan["days_overdue"] == 0
+    assert client.get("/loans/overdue").get_json() == []
+ 
+def test_loans_list_marks_overdue_loans(client):
+    book = add_book(client, total_copies=2)
+    member = add_member(client)
+    add_loan_to_store(68, book["id"], member["id"], date.today() - timedelta(days=2))
+    add_loan_to_store(69, book["id"], member["id"], date.today() + timedelta(days=5))
+    loans = {loan["id"]: loan for loan in client.get("/loans").get_json()}
+    assert loans[68]["overdue"] is True
+    assert loans[68]["days_overdue"] == 2
+    assert loans[69]["overdue"] is False
+    assert loans[69]["days_overdue"] == 0

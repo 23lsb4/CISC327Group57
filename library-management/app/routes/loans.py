@@ -21,6 +21,14 @@ def list_loans():
         results = [l for l in results if l.book_id == book_id]
     return jsonify([l.to_dict() for l in results])
 
+@loans_bp.route("/overdue", methods=["GET"])
+def list_overdue_loans():
+    results = [l for l in store.loans.values() if l.is_overdue()]
+    member_id = request.args.get("member_id", type=int)
+    if member_id is not None:
+        results = [l for l in results if l.member_id == member_id]
+    results.sort(key=lambda l: l.due_date)
+    return jsonify([l.to_dict() for l in results])
 
 @loans_bp.route("", methods=["POST"])
 def checkout_book():
