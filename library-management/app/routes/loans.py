@@ -5,6 +5,7 @@ from flask import Blueprint, jsonify, request
 from app import store
 from app.models.loan import Loan, LOAN_PERIOD_DAYS
 from app.routes.reservations import active_holds
+from notification_service import send_notification
 
 FINE_PER_DAY = 0.25  # dollars charged per day overdue
 
@@ -102,3 +103,27 @@ def get_fine(loan_id):
     fine_amount = round(days_overdue * FINE_PER_DAY, 2)
 
     return jsonify({"loan_id": loan_id, "fine_amount": fine_amount})
+
+
+@loans_bp.route("/<int:loan_id>/remind", methods=["POST"])
+def remind_overdue(loan_id):
+    loan = store.loans.get(loan_id)
+    if loan is None:
+        return jsonify({"error": "Loan not found"}), 404
+    if not loan.is_overdue():
+        return jsonify({"error": "Loan is not overdue"}), 400
+    member = store.members.get(loan.member_id)
+    if member is None:
+        return jsonify({"error": "Member not found"}), 404
+
+    book = store.books.get(loan.book_id)
+    title = book.title if book else "your book"
+    subject = "Overdue book reminder"
+    message = (f"'{title}' was due on {loan.due_date.isoformat()} and is "
+               f"{loan.days_overdue()} days overdue. Please return it.")
+
+    sent = send_notification(member.email, subject, message)
+    loan.reminded = sent
+    response = loan.to_dict()
+    response["notification_sent"] = sent
+    return jsonify(response), 200
