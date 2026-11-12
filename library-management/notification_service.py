@@ -20,7 +20,7 @@ Use clear_notifications before and after tests that use the real simulator.
 """
 
 ##CUSTOMIZATION: prefix added to the front of every recorded subject
-SUBJECT_PREFIX = "[City Library]"
+SUBJECT_PREFIX = "[City Library] "
 
 _notifications = []
 
