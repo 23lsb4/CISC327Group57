@@ -89,3 +89,92 @@ def test_reminder_recorded_by_simulator(client):
         "message": f"'HiBook' was due on {due_date.isoformat()} and is 3 days overdue. Please return it.",
     }]
     notification_service.clear_notifications()
+
+##FEATURE: UI HOME PAGE
+
+def test_ui_home_page_loads(client):
+    response = client.get("/")
+    assert response.status_code == 200
+    assert "Library Management System" in response.get_data(as_text=True)
+
+##FEATURE: UI BOOKS PAGE
+
+def test_ui_books_page_empty(client):
+    response = client.get("/ui/books")
+    assert response.status_code == 200
+    assert client.get("/books").get_json() == []
+
+def test_ui_books_page_lists_books(client):
+    add_book(client, title="HiBook", isbn="1")
+    add_book(client, title="ByeBook", isbn="2")
+    response = client.get("/ui/books")
+    page = response.get_data(as_text=True)
+    assert response.status_code == 200
+    assert "HiBook" in page
+    assert "ByeBook" in page
+
+def test_ui_add_book_saved(client):
+    form = {"title":"HiBook", "author":"Hi", "isbn":"1", "total_copies":"3"}
+    response = client.post("/ui/books", data=form)
+    assert response.status_code == 302
+    assert response.headers["Location"].endswith("/ui/books")
+    books = client.get("/books").get_json()
+    assert len(books) == 1
+    assert books[0]["title"] == "HiBook"
+    assert books[0]["author"] == "Hi"
+    assert books[0]["isbn"] == "1"
+    assert books[0]["total_copies"] == 3
+    assert books[0]["available_copies"] == 3
+    assert "HiBook" in client.get("/ui/books").get_data(as_text=True)
+
+def test_ui_delete_book_removed(client):
+    book = add_book(client, title="HiBook")
+    response = client.post(f"/ui/books/{book['id']}/delete")
+    assert response.status_code == 302
+    assert client.get("/books").get_json() == []
+    assert client.get(f"/books/{book['id']}").status_code == 404
+    assert "HiBook" not in client.get("/ui/books").get_data(as_text=True)
+
+def test_ui_delete_book_not_found_changes_nothing(client):
+    book = add_book(client, title="HiBook")
+    response = client.post("/ui/books/999/delete")
+    assert response.status_code == 302
+    books = client.get("/books").get_json()
+    assert [b["id"] for b in books] == [book["id"]]
+
+##FEATURE: UI MEMBERS PAGE
+
+def test_ui_members_page_lists_members(client):
+    add_member(client, name="First", email="first@example.com")
+    add_member(client, name="Second", email="second@example.com")
+    response = client.get("/ui/members")
+    page = response.get_data(as_text=True)
+    assert response.status_code == 200
+    assert "First" in page
+    assert "Second" in page
+
+def test_ui_add_member_saved(client):
+    form = {"name":"First", "email":"first@example.com"}
+    response = client.post("/ui/members", data=form)
+    assert response.status_code == 302
+    assert response.headers["Location"].endswith("/ui/members")
+    members = client.get("/members").get_json()
+    assert len(members) == 1
+    assert members[0]["name"] == "First"
+    assert members[0]["email"] == "first@example.com"
+    assert members[0]["membership_date"] == date.today().isoformat()
+    assert "First" in client.get("/ui/members").get_data(as_text=True)
+
+def test_ui_delete_member_removed(client):
+    member = add_member(client, name="First", email="first@example.com")
+    response = client.post(f"/ui/members/{member['id']}/delete")
+    assert response.status_code == 302
+    assert client.get("/members").get_json() == []
+    assert client.get(f"/members/{member['id']}").status_code == 404
+
+def test_ui_delete_member_not_found_changes_nothing(client):
+    member = add_member(client, name="First", email="first@example.com")
+    response = client.post("/ui/members/999/delete")
+    assert response.status_code == 302
+    members = client.get("/members").get_json()
+    assert [m["id"] for m in members] == [member["id"]]
