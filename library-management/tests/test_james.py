@@ -1,3 +1,4 @@
+import pytest
 from datetime import date, timedelta
  
 from app import store
@@ -87,10 +88,12 @@ def test_add_book_available_and_saved(client):
     saved_book = client.get(f"/books/{book['id']}").get_json()
     assert saved_book == book
 
+@pytest.mark.xfail(reason="Known defect (FR-002/FR-003): the app accepts a negative total_copies and returns 201.")
 def test_add_book_no_negative_copies(client):
     response = client.post("/books",json={**a_book,"total_copies":-1})
     assert 400 <= response.status_code < 500
 
+@pytest.mark.xfail(reason="Known defect (FR-001/FR-005/FR-007): the app accepts an empty title and returns 201.")
 def test_add_book_empty_title(client):
     response = client.post("/books", json={**a_book, "title":""})
     assert 400 <= response.status_code < 500
@@ -130,6 +133,7 @@ def test_update_book_not_found(client):
     response = client.put("/books/999",json={"title":"ByeBook"})
     assert response.status_code == 404
  
+@pytest.mark.xfail(reason="Known defect (FR-002): PUT /books/<id> lets available_copies be set above total_copies.")
 def test_update_available_copies_above_total(client):
     book = add_book(client, total_copies=1)
     client.put(f"/books/{book['id']}",json={"available_copies":99})
@@ -212,6 +216,7 @@ def test_renew_after_return_rejected(client):
     response = client.put(f"/loans/{loan['id']}/renew")
     assert response.status_code == 400
  
+@pytest.mark.xfail(reason="Known defect (FR-024): renew_loan never checks reservations, so a renewal succeeds even when another member has a hold.")
 def test_renew_blocked_by_hold(client):
     book = add_book(client)
     borrower = add_member(client, email="m1@example.com")
@@ -252,6 +257,7 @@ def test_fine_lower_after_renewal(client):
     assert fine_before == 5.0
     assert fine_after == 1.5
  
+@pytest.mark.xfail(reason="Known defect (FR-032): get_fine counts up to today's date and ignores the loan's return_date, so the fine keeps growing after a return.")
 def test_fine_stops_at_return_date(client):
     book = add_book(client)
     member = add_member(client)

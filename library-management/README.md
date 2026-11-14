@@ -57,6 +57,7 @@ returns `409`, and the front member's checkout marks their hold `fulfilled`.
 | PUT | `/members/<id>` | Update a member |
 | DELETE | `/members/<id>` | Delete a member |
 | POST | `/loans` | Check out a book (`book_id`, `member_id`) |
+| POST | `/loans/<id>/remind` | Send an overdue reminder to the borrower; returns `notification_sent` |
 | PUT | `/loans/<id>/return` | Return a loaned book |
 | GET | `/loans/overdue?member_id=` | List overdue loans |
 | GET | `/loans?member_id=&book_id=` | Look up loans |

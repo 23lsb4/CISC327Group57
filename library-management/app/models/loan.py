@@ -11,6 +11,7 @@ class Loan:
         self.loan_date = loan_date or date.today()
         self.due_date = due_date
         self.return_date = return_date
+        self.reminded = False
         
     def is_overdue(self, today=None):
             today = today or date.today()
@@ -33,6 +34,7 @@ class Loan:
             "return_date": self.return_date.isoformat() if self.return_date else None,
             "overdue": self.is_overdue(),
             "days_overdue": self.days_overdue(),
+            "reminded": self.reminded,
         }
 
     @staticmethod
